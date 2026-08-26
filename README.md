@@ -25,8 +25,10 @@ whatever needs you.
 
 ## Requires
 
-- [luvus](https://github.com/RizRiyz/luvus) 0.11 or newer, with a server running
-  (`luvus` in any terminal starts one). Tested against 0.12.0 and 0.13.1.
+- [luvus](https://github.com/RizRiyz/luvus) 0.11 or newer — get it from
+  [luvus.dev](https://luvus.dev), which has the install line for Linux, macOS
+  and Windows. Running `luvus` in any terminal starts the server this reads.
+  Tested against 0.12.0 and 0.13.1.
 - The Omarchy shell.
 - A Nerd Font for the glyphs — Omarchy's default bar font already is one.
 
