@@ -99,6 +99,56 @@ different thing from one on master.
 Keys, while the panel has focus: `r` refreshes, `g` jumps to whatever needs you,
 `Escape` closes.
 
+## When an agent reads as idle while it is plainly working
+
+This widget shows what luvus reports. It detects nothing itself, so an agent in
+the wrong state is nearly always luvus lacking a rule for it rather than the
+widget being wrong — and it is worth knowing the difference before filing a bug
+here.
+
+luvus decides an agent's state by matching substrings against what the pane is
+currently showing. Claude is covered out of the box; several of the fifteen
+agents luvus recognises are not. Ask it what it saw:
+
+```bash
+luvus agent explain <pane-id>
+```
+
+`"source": "no_positive_state_evidence"` with `"confidence": "none"` means no
+rule matched and `idle` is a fallback, not a finding.
+
+Teach it, without rebuilding anything — one file per agent in
+`~/.luvus/manifests/`, merged over the built-ins by priority:
+
+```toml
+# ~/.luvus/manifests/grok.toml
+agent = "grok"
+
+[[rule]]
+state = "working"
+priority = 200
+region = "screen"
+any = ["subagent still running", "send a message to interrupt"]
+```
+
+Then reload and re-check:
+
+```bash
+echo '{"id":"1","method":"server.reload_agent_manifests","params":{}}' | luvus uhp proxy
+luvus agent explain <pane-id>
+```
+
+Pick the string the way that example does: something the agent prints *only*
+while it is busy. An offer to interrupt is ideal — it exists only when there is
+something to interrupt.
+
+**Use `working` for busy, and keep `blocked` for genuinely needing a human.**
+luvus reserves `blocked` for that — its built-in Claude rule is `"do you want to
+proceed"` — and this widget spends the urgent colour and the right-click jump on
+it. An agent waiting on its own subagent needs nobody, so marking it `blocked`
+would send you somewhere nothing is wrong and devalue the one signal worth
+interrupting you for.
+
 ## How it stays current
 
 Two ways in, deliberately:

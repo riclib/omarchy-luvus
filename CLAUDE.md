@@ -315,6 +315,41 @@ Two of those need their reasons stated or they will be "simplified" away:
 Anything that reaches a shell goes through `Util.execArgv` or an argv array,
 never `bar.run` — `bar.run` hands its argument to `bash -lc` as a string.
 
+## How luvus decides a status, and why that is our problem
+
+The widget renders `status` and never computes it, so every complaint about a
+wrong state resolves here. luvus detects state by **matching substrings against
+the pane's rendered output** — screen-scraping, per agent, with rules merged by
+priority. `luvus agent explain <pane>` returns the working out:
+
+```json
+{"status":"working","authority":null,
+ "identity":{"confidence":"authoritative","source":"process_tree"},
+ "state_evidence":{"source":"manifest_rule","confidence":"high",
+                   "rule_priority":200,"rule_region":"screen","blocked_hint":null}}
+```
+
+Two fields, two different questions. `identity` is *which agent is this*
+(`process_tree` = found the real process, trustworthy; `command_fallback` =
+guessed from the command line). `state_evidence` is *how the status was reached*
+— `manifest_rule` is a positive match, `shell_activity` is inferred, and
+`no_positive_state_evidence` with `confidence: "none"` means **nothing matched
+and `idle` is a fallback, not a finding**. Treat that last one as "unknown".
+
+Measured 2026-08-26: luvus ships **23 rules across 15 recognised agents**, so
+coverage is thin outside claude. A live grok running a subagent for nine minutes
+reported `idle`/`confidence: none` — the widget was honest and luvus was blind.
+Rules live in `~/.luvus/manifests/<agent>.toml`, merge over the built-ins, and
+load on `server.reload_agent_manifests` with no rebuild. The README carries the
+worked example.
+
+**`working` is not `blocked`, and the distinction is ours to defend.** luvus
+reserves `blocked` for needing a human — the built-in claude rule for it is
+`"do you want to proceed"` — and this widget spends its urgent colour, its
+`jumpTarget`, and the `g` key on exactly that. An agent parked on its own
+subagent is busy, not stuck. Anyone tempted to write a `blocked` rule for a
+waiting-on-a-child state is about to make the bar cry wolf.
+
 ## Lineage
 
 The panel's shape — the four counts, the worst-first rows, the status glyphs and
