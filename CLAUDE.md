@@ -78,8 +78,9 @@ second ladder means the subscription is flapping.
 
 ## What luvus actually gives us
 
-Verified against a live 0.12.0 server, not read out of documentation — the docs
-do not cover the event names at all.
+Verified against live servers, not read out of documentation — the docs do not
+cover the event names at all. First established on 0.12.0; re-checked on 0.13.1,
+which changed three things worth knowing about (see the end of this section).
 
 `luvus agent list` prints JSON on stdout **by default**; there is no `--json` to
 remember (the flag is accepted and changes nothing). The envelope is the same
@@ -113,10 +114,10 @@ acknowledgement, then one object per event:
 
 Those are every name observed; `Model.RELEVANT_EVENTS` is that list.
 
-**Two things the schema promises and the CLI does not deliver.** The published
-`event.schema.json` requires a monotonic `sequence` on every event, and the
-socket API has an `after_sequence` replay buffer and a `resync_required`
-overflow signal. Neither reaches you through `luvus events` — the lines carry
+**On 0.12.0, two things the schema promised and the CLI did not deliver.** The
+published `event.schema.json` requires a monotonic `sequence` on every event, and
+the socket API has an `after_sequence` replay buffer and a `resync_required`
+overflow signal. Neither reached you through `luvus events` — the lines carried
 `event` and `data` only. And `pane.closed` is emitted **two or three times** for
 the same pane.
 
@@ -131,6 +132,44 @@ this could subscribe properly.
 Timing measured through the shim: subscription up → first `agent list` ~74ms;
 `workspace open` → refresh ~1.9s, nearly all of it luvus doing the work, the
 debounce being 300ms of it.
+
+### What 0.13.1 changed
+
+Re-verified on 2026-08-26. Nothing broke — every change is additive, and the
+plugin needed no code change — but all three matter to whoever edits this next.
+
+**`sequence` is now on the CLI stream**, and the acknowledgement carries a good
+deal more:
+
+```json
+{"id":"1","result":{"loss_behavior":"resync_required_then_close",
+ "queue_capacity":256,"replayed":0,"sequence":2,"type":"subscription_started"}}
+{"data":{"pane":"2"},"event":"pane.created","sequence":3}
+```
+
+So the paragraph above is now historical. The doorbell-not-a-data-source choice
+still stands on the duplicate `pane.closed` alone, but the argument is weaker
+than it was, and an incremental path is worth revisiting if the duplicates go.
+Note `loss_behavior: resync_required_then_close` with a 256-deep queue: a slow
+subscriber is **closed**, not merely warned. That is handled — `onExited` backs
+off and reopens, and the reopen re-reads the world — but it is now a documented
+server behaviour rather than a guess.
+
+**`terminal.*` events are on the default stream, and they are loud.** Measured on
+an ordinary four-agent session: **360 events in 30 seconds, all
+`terminal.output_ready`** — it fires on every chunk of pane output. On 0.12.0
+this stream was silent when nothing changed. `RELEVANT_EVENTS` already excludes
+them so none of it reaches `refresh()`, and a pre-parse substring filter was
+written, measured and **thrown away**: 72,200 lines cost 23ms to `JSON.parse`
+outright against 16ms filtered, which at ~12 events/s is 18µs per second. Real
+volume, irrelevant cost. Do not re-add the filter without measuring again on a
+much busier session.
+
+**`agent list` gained fields**: `revision` and `type` on `result`, `authority`
+and `state_source` on each agent. Nothing was removed, and unknown fields are
+ignored, which is why the upgrade was a no-op. `state_source` (`shell_activity`,
+`no_positive_state_evidence`) and `authority` (`command_fallback`) look like they
+explain how confident luvus is in a status — potentially worth surfacing.
 
 ## QML traps this plugin already fell into
 

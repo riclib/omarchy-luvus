@@ -2,9 +2,15 @@ const test = require('node:test')
 const assert = require('node:assert')
 const Model = require('../Model.js')
 
-// The fixtures below are verbatim from a live luvus 0.12.0 server — captured
-// with `luvus agent list` and `luvus events` — not invented. If luvus changes
-// its shape, these are what should fail first.
+// The fixtures below are verbatim from a live luvus server — captured with
+// `luvus agent list` and `luvus events`, not invented. If luvus changes its
+// shape, these are what should fail first.
+//
+// Captured on 0.12.0 and re-checked against 0.13.1, which added fields
+// (`revision`, `type`, `authority`, `state_source`) and a `sequence` on the
+// event stream without removing anything. The fixtures are deliberately left at
+// the older shape: they assert that unknown fields are ignored, which is the
+// property that made that upgrade a no-op.
 
 const HOME = '/home/riclib'
 
