@@ -107,9 +107,9 @@ Two ways in, deliberately:
 
 Events are a doorbell here, not a data source. `pane.agent_status_changed`
 carries a full payload and it is tempting to apply it directly, but `pane.closed`
-is emitted more than once for the same pane and the CLI stream carries no
-sequence number to deduplicate against — so an incrementally-maintained list
-would drift. A relevant event debounces for 300ms and then re-reads.
+is emitted more than once for the same pane — so an incrementally-maintained list
+would drift, with nothing to catch it doing so. A relevant event debounces for
+300ms and then re-reads.
 
 A 30-second timer sits behind all of it. It is not the update mechanism; it is
 the thing that notices the doorbell has stopped working — a luvus server
