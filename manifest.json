@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "riclib.luvus",
+  "name": "Luvus",
+  "version": "0.1.0",
+  "author": "Ricardo Liberato",
+  "license": "MIT",
+  "description": "Coding agents from luvus in the Omarchy bar — who is working, who is blocked, and a click to go there.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarSlot.qml"
+  },
+  "barWidget": {
+    "displayName": "Luvus",
+    "description": "Agent status from luvus. Click: the agent panel. Middle click: refresh. Right click: jump to whatever needs you.",
+    "category": "Development",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "session": "",
+      "luvusBin": "luvus",
+      "pushUpdates": true,
+      "hideWhenIdle": false,
+      "focusWindowClass": ""
+    },
+    "schema": [
+      {
+        "key": "session",
+        "type": "string",
+        "label": "Session",
+        "defaultValue": "",
+        "description": "Which luvus server session to watch. Empty means the default one — the answer for almost everybody. Named sessions are listed by: luvus session list"
+      },
+      {
+        "key": "luvusBin",
+        "type": "string",
+        "label": "luvus binary",
+        "defaultValue": "luvus",
+        "description": "Left as a bare name it is resolved on PATH. The shell does not always inherit a login PATH, so set an absolute path (~/.local/bin/luvus) if the widget reports the binary missing while your terminal finds it."
+      },
+      {
+        "key": "pushUpdates",
+        "type": "boolean",
+        "label": "Live updates",
+        "defaultValue": true,
+        "description": "Hold a `luvus events` subscription open and refresh the moment an agent changes state, instead of waiting for the 30s fallback poll. Turn it off to fall back to polling alone."
+      },
+      {
+        "key": "hideWhenIdle",
+        "type": "boolean",
+        "label": "Hide when nothing is running",
+        "defaultValue": false,
+        "description": "Show the widget only when an agent is working or blocked. It stays visible while the panel is open."
+      },
+      {
+        "key": "focusWindowClass",
+        "type": "string",
+        "label": "Terminal window class",
+        "defaultValue": "",
+        "description": "Focusing a luvus pane moves the cursor inside the TUI; it cannot raise the terminal that hosts it. Set the Hyprland class of that terminal (see: hyprctl clients) and the widget will raise the window too. Empty means focus the pane and leave the window alone."
+      }
+    ]
+  }
+}
