@@ -78,9 +78,20 @@ second ladder means the subscription is flapping.
 
 ## What luvus actually gives us
 
-Verified against live servers, not read out of documentation — the docs do not
-cover the event names at all. First established on 0.12.0; re-checked on 0.13.1,
+Verified against live servers. First established on 0.12.0; re-checked on 0.13.1,
 which changed three things worth knowing about (see the end of this section).
+
+**Read `https://luvus.dev/agent-readme.md` before doing any of this again.** It is
+advertised in the ASCII art on every `luvus help` screen and is easy to scroll
+past, which is exactly what happened here. It does *not* list the event names —
+that part had to be excavated from a probe server, see below — but it names the
+runtime discovery commands (`luvus uhp capabilities`, `luvus uhp schema`) and the
+intended consumption pattern, which is not the one this plugin uses.
+
+Careful with `uhp capabilities`: the ~69 dotted names in it are RPC **methods**,
+not events. `pane.close` is something you call; `pane.closed` is something you
+receive, and only the `terminal.*` events are declared in the schema bundle. None
+of the events this plugin depends on appear in either.
 
 `luvus agent list` prints JSON on stdout **by default**; there is no `--json` to
 remember (the flag is accepted and changes nothing). The envelope is the same
@@ -147,9 +158,20 @@ deal more:
 {"data":{"pane":"2"},"event":"pane.created","sequence":3}
 ```
 
-So the paragraph above is now historical. The doorbell-not-a-data-source choice
-still stands on the duplicate `pane.closed` alone, but the argument is weaker
-than it was, and an incremental path is worth revisiting if the duplicates go.
+So the paragraph above is now historical, and with it half the reason for the
+design here. The doorbell-not-a-data-source choice still stands on the duplicate
+`pane.closed` alone, but it is now the weaker half of the argument.
+
+**There is a documented alternative, and it should be the starting point for
+anyone revisiting this.** `agent-readme.md` spells out the intended pattern:
+subscribe to sequenced events, take a `session.snapshot` (`luvus uhp snapshot`),
+discard buffered events at or below the snapshot's sequence, then apply later
+events in order. `uhp capabilities` advertises the contract it runs on —
+`events: {loss: "resync_required", resume: "after_sequence"}`. That is a
+race-free sync, and it is strictly better than debounce-and-re-read if the
+duplicate `pane.closed` can be handled or is fixed upstream. It was not built
+here because on 0.12.0 the CLI stream carried no sequence and the pattern was
+therefore impossible — that is no longer true.
 Note `loss_behavior: resync_required_then_close` with a 256-deep queue: a slow
 subscriber is **closed**, not merely warned. That is handled — `onExited` backs
 off and reopens, and the reopen re-reads the world — but it is now a documented
