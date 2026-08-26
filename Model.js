@@ -8,10 +8,32 @@
 // sort: what needs a human first, what is asleep last.
 var STATUS_ORDER = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 }
 
+// Every dimension of luvus's answer is luvus's to choose, not just its length —
+// and "luvus" here means whatever binary `luvusBin` names, reporting whatever a
+// branch name or a project directory happens to be called. So bound all of them,
+// and bound them HERE, at the one place external text becomes plugin state.
+// Clamping at each sink is what leaves a gap: a sink gets added later and the
+// clamp does not come with it.
+//
+// The strip is not belt-and-braces. Some of the shell components this text is
+// handed to render on Qt's default AutoText, which turns a string containing a
+// recognised HTML tag into rich text — so a branch called `<b>x</b>` would
+// render as markup in a panel this plugin does not own.
+var MAX_TEXT = 160
+var MAX_AGENTS = 200
+
+function clamp(value) {
+  var text = String(value === null || value === undefined ? "" : value)
+  text = text.replace(/[<>&]/g, " ")
+  return text.length > MAX_TEXT ? text.slice(0, MAX_TEXT - 1) + "\u2026" : text
+}
+
 function emptyState(reason) {
   return {
     online: false,
-    reason: reason || "",
+    // Clamped like any other external string: this carries luvus's own
+    // error.message straight through on the error-envelope path below.
+    reason: clamp(reason || ""),
     total: 0,
     working: 0,
     blocked: 0,
@@ -43,11 +65,11 @@ function baseName(path) {
 // unambiguous.
 function agentLabel(agent) {
   if (!agent) return "Agent"
-  if (agent.name) return String(agent.name)
-  if (agent.project) return String(agent.project)
+  if (agent.name) return clamp(agent.name)
+  if (agent.project) return clamp(agent.project)
   var base = baseName(agent.cwd)
-  if (base) return base
-  return agent.pane ? "pane " + agent.pane : "Agent"
+  if (base) return clamp(base)
+  return agent.pane ? "pane " + clamp(agent.pane) : "Agent"
 }
 
 // The second line of a row: which agent binary, on which branch, and whether
@@ -56,11 +78,23 @@ function agentLabel(agent) {
 function agentDetail(agent, home) {
   if (!agent) return ""
   var bits = []
-  if (agent.agent) bits.push(String(agent.agent))
-  if (agent.branch) bits.push(String(agent.branch) + (agent.worktree === true ? " ⑂" : ""))
+  if (agent.agent) bits.push(clamp(agent.agent))
+  if (agent.branch) bits.push(clamp(agent.branch) + (agent.worktree === true ? " ⑂" : ""))
   var path = shortPath(agent.cwd, home)
-  if (path && bits.length < 2) bits.push(path)
+  if (path && bits.length < 2) bits.push(clamp(path))
   return bits.join("  ·  ")
+}
+
+// A pane id is argv to the luvus binary, so it is not merely text. luvus parses
+// a leading-dash "id" as one of its own global flags rather than rejecting it,
+// which quietly changes what the command means — so anything that is not
+// plainly an id is dropped, and the row simply loses its jump.
+function paneId(value) {
+  var text = String(value === null || value === undefined ? "" : value)
+  // The first character may not be `-`: that is the whole point. An id of "-x"
+  // is what luvus's parser mistakes for a flag, and a class of [A-Za-z0-9._-]
+  // that allows it at the front admits exactly the input being guarded against.
+  return /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/.test(text) ? text : ""
 }
 
 function normalizeStatus(value) {
@@ -93,7 +127,11 @@ function parseAgents(raw, home) {
 
   var state = emptyState("")
   state.online = true
+  // Counted before the slice, so the panel can say how many there really are
+  // even when it refuses to draw them all.
   state.total = list.length
+  state.truncated = list.length > MAX_AGENTS
+  if (state.truncated) list = list.slice(0, MAX_AGENTS)
 
   var rows = []
   for (var i = 0; i < list.length; i++) {
@@ -104,10 +142,7 @@ function parseAgents(raw, home) {
       label: agentLabel(agent),
       detail: agentDetail(agent, home),
       status: status,
-      pane: agent.pane === undefined || agent.pane === null ? "" : String(agent.pane),
-      cwd: String(agent.cwd || ""),
-      project: String(agent.project || ""),
-      kind: String(agent.agent || ""),
+      pane: paneId(agent.pane),
       focused: agent.focused === true
     })
   }
@@ -238,6 +273,10 @@ if (typeof module !== "undefined") {
     emptyState: emptyState,
     shortPath: shortPath,
     baseName: baseName,
+    clamp: clamp,
+    paneId: paneId,
+    MAX_TEXT: MAX_TEXT,
+    MAX_AGENTS: MAX_AGENTS,
     agentLabel: agentLabel,
     agentDetail: agentDetail,
     normalizeStatus: normalizeStatus,

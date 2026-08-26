@@ -104,10 +104,25 @@ Item {
     return head.concat(rest)
   }
 
+  // A read is bounded before it reaches us, not after. StdioCollector has no
+  // size limit of its own and no deadline, so an `agent list` that hangs would
+  // wedge this widget until the shell restarts, and one that answers with
+  // hundreds of megabytes would be buffered whole into the shell's memory —
+  // the whole desktop's, not this widget's — before any check of ours could run.
+  //
+  // Same shape the first-party notifications service uses for a read it does
+  // not control: `timeout` for the deadline, `head -c` for the ceiling. The
+  // script is a constant and every variable part arrives as a positional
+  // parameter, which bash expands without re-tokenizing, so a path or a session
+  // name containing $(…) stays literal.
+  readonly property string boundedRead:
+    'timeout "$1" "${@:3}" | head -c "$2"'
+
   function refresh() {
     if (!root.started || listProcess.running) return
     root.refreshing = true
-    listProcess.command = root.argv(["agent", "list"])
+    listProcess.command = ["bash", "-lc", root.boundedRead, "bash", "10", "4000000"]
+      .concat(root.argv(["agent", "list"]))
     listProcess.running = true
   }
 
@@ -128,7 +143,16 @@ Item {
       // Sole delivery path. A killed process still closes its stream, so this
       // fires on failure too — never also deliver from onExited, or a slow call
       // can overwrite a newer one's answer.
-      onStreamFinished: root.state = Model.parseAgents(text, root.home)
+      //
+      // StdioCollector offers no size limit of its own, so it buffers whatever
+      // the child writes, in full, before this runs. The cap therefore cannot
+      // prevent the buffering — it can only refuse to spend a second copy and a
+      // JSON.parse on it. A luvus that answers with hundreds of megabytes is
+      // broken or is not luvus, and either way this is the whole desktop shell's
+      // memory, not one widget's.
+      onStreamFinished: root.state = text.length > 4000000
+        ? Model.emptyState("luvus answered with more data than makes sense")
+        : Model.parseAgents(text, root.home)
     }
 
     onExited: function (exitCode) {
@@ -157,6 +181,10 @@ Item {
 
     stdout: SplitParser {
       onRead: function (line) {
+        // An event line is a small JSON object; the largest observed is a few
+        // hundred bytes. Anything at this size is not one, and parsing it only
+        // to discard it is work an unbounded stream gets to choose for us.
+        if (line.length > 65536) return
         var read = Model.readEventLine(line)
         if (read.kind === "subscribed") {
           root.subscribed = true

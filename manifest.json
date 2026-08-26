@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Ricardo Liberato",
   "license": "MIT",
-  "description": "Coding agents from luvus in the Omarchy bar — who is working, who is blocked, and a click to go there.",
+  "description": "Your luvus coding agents in the Omarchy bar — who is working, who is blocked, and a click to go there.",
   "kinds": [
     "bar-widget"
   ],

@@ -182,3 +182,66 @@ test('the tooltip names the states that are actually populated', () => {
   assert.equal(Model.tooltipFor(state), 'luvus — 1 working, 1 idle')
   assert.ok(Model.tooltipFor(Model.emptyState('luvus not found on PATH')).includes('not found'))
 })
+
+// --- bounding external input ---------------------------------------------
+//
+// These exist because the same author's previous plugin was told twice, in
+// review, that every dimension of an external answer belongs to whoever sent
+// it. Each test below is one dimension.
+
+test('markup in an error message is stripped, not passed to an AutoText sink', () => {
+  const raw = JSON.stringify({ id: '1', error: { message: '<img src=x onerror=1><b>hi</b>' } })
+  const state = Model.parseAgents(raw, HOME)
+  assert.ok(!/[<>]/.test(state.reason))
+  // The two sinks that render inside components this plugin does not own.
+  assert.ok(!/[<>]/.test(Model.tooltipFor(state)))
+  assert.ok(!/[<>]/.test(Model.heroDetail(state)))
+})
+
+test('a branch name that is markup cannot reach a row as markup', () => {
+  const raw = JSON.stringify({ id: '1', result: { agents: [
+    { pane: '1', status: 'idle', project: '<b>proj</b>', branch: '<table><tr><td>x' }] } })
+  const row = Model.parseAgents(raw, HOME).agents[0]
+  assert.ok(!/[<>]/.test(row.label))
+  assert.ok(!/[<>]/.test(row.detail))
+})
+
+test('every external string is clamped to a renderable length', () => {
+  const raw = JSON.stringify({ id: '1', result: { agents: [
+    { pane: '1', status: 'idle', name: 'n'.repeat(2000000), branch: 'b'.repeat(2000000) }] } })
+  const row = Model.parseAgents(raw, HOME).agents[0]
+  assert.ok(row.label.length <= Model.MAX_TEXT, `label ${row.label.length}`)
+  assert.ok(row.detail.length <= Model.MAX_TEXT * 2 + 8, `detail ${row.detail.length}`)
+})
+
+test('the agent list is capped, and the real total is still reported', () => {
+  const agents = Array.from({ length: 5000 }, (_, i) => ({ pane: String(i), status: 'idle' }))
+  const state = Model.parseAgents(JSON.stringify({ id: '1', result: { agents } }), HOME)
+  assert.equal(state.agents.length, Model.MAX_AGENTS)
+  assert.equal(state.total, 5000)
+  assert.equal(state.truncated, true)
+})
+
+test('an ordinary list is not marked truncated', () => {
+  const state = Model.parseAgents(LIVE_LIST, HOME)
+  assert.equal(state.truncated, false)
+  assert.equal(state.agents.length, 2)
+})
+
+test('a pane id that luvus would parse as one of its own flags is dropped', () => {
+  // luvus accepts `--flag=value` where an id is expected, so a hostile id
+  // silently changes what `luvus pane focus <id>` means.
+  for (const bad of ['--remote=evil.invalid', '--session=other', '-x', 'a b', '../x', 'x'.repeat(65)]) {
+    const raw = JSON.stringify({ id: '1', result: { agents: [{ pane: bad, status: 'blocked' }] } })
+    const state = Model.parseAgents(raw, HOME)
+    assert.equal(state.agents[0].pane, '', bad)
+    // and so nothing is offered to jump to, rather than jumping somewhere odd
+    assert.equal(Model.jumpTarget(state), '', bad)
+  }
+})
+
+test('ordinary pane ids survive the guard', () => {
+  for (const good of ['1', '42', 'a', 'pane_1', 'a.b-c']) {
+    assert.equal(Model.paneId(good), good)
+  }
+})

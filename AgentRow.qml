@@ -35,6 +35,9 @@ Item {
     anchors.left: parent.left
     anchors.leftMargin: Style.space(6)
     anchors.verticalCenter: parent.verticalCenter
+    // A closed set of five glyphs, but explicit anyway: the release check greps
+    // for this mechanically and does not stop to reason about reachability.
+    textFormat: Text.PlainText
     text: root.glyph
     color: root.statusColor
     font.family: Style.font.menuFamily

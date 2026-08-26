@@ -72,11 +72,17 @@ BarWidget {
   // Focusing a pane moves the cursor inside the luvus TUI. It cannot raise the
   // terminal window that hosts it — nothing inside a terminal can — so the
   // window half is a separate, opt-in dispatch the user configures by class.
+  //
+  // Util.execArgv, never bar.run: bar.run hands its argument to `bash -lc` as a
+  // shell string, so concatenating a setting into it is a command-injection
+  // sink — `x; curl … | bash` in focusWindowClass would run on the next click.
+  // execArgv passes the vector through positional parameters, which bash does
+  // not re-tokenize, so the class stays literal whatever is in it.
   function goToPane(paneId) {
     if (!paneId) return
     service.focusPane(paneId)
-    if (root.focusWindowClass && root.bar)
-      root.bar.run("hyprctl dispatch focuswindow class:" + root.focusWindowClass)
+    if (root.focusWindowClass)
+      Util.execArgv(["hyprctl", "dispatch", "focuswindow", "class:" + root.focusWindowClass])
   }
 
   // ---- the panel ---------------------------------------------------------

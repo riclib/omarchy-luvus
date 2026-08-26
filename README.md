@@ -36,11 +36,40 @@ omarchy plugin add https://github.com/riclib/omarchy-luvus.git --enable
 omarchy restart shell
 ```
 
-Then place it in a bar section in `~/.config/omarchy/shell.json`:
+`--enable` places the widget for you — it asks which bar section, offering the
+centre by default — and writes `~/.config/omarchy/shell.json` itself. There is
+no file to edit by hand.
 
-```jsonc
-{ "id": "riclib.luvus" }
+To place it later, or to move it:
+
+```bash
+omarchy plugin enable riclib.luvus --section right
 ```
+
+> Omarchy plugins are unsandboxed code running inside the long-lived shell
+> process. Read the source before installing this or any other one.
+
+## Update
+
+```bash
+omarchy plugin update riclib.luvus --yes
+omarchy restart shell
+```
+
+Without `--yes` it prints the incoming diff and waits for a keypress.
+
+## Remove
+
+```bash
+omarchy plugin remove riclib.luvus
+omarchy restart shell
+```
+
+That is the whole removal, because the plugin's own folder is its whole
+footprint. It creates no files, writes no configuration of yours, installs no
+service, takes no keybinding, and stores nothing on disk — it reads luvus and
+draws. Removing it takes the widget out of your bar layout and deletes the
+checkout; luvus itself, its sessions and its data are untouched.
 
 ## Settings
 
@@ -128,6 +157,11 @@ replacement for it.
 
 MIT — see [LICENSE](LICENSE).
 
-luvus itself is AGPL-3.0. This plugin only *executes* the `luvus` binary and
-reads its stdout; it contains and links no luvus code, so the two licences do
-not interact. Do not vendor luvus source into this repository.
+This plugin contains and links no luvus code — it executes the `luvus` binary
+as a separate process and reads its stdout — so the MIT licence above applies to
+this repository alone. luvus itself remains AGPL-3.0 for anyone who redistributes
+it. Do not vendor luvus source into this repository.
+
+Portions of `Panel.qml` and `AgentRow.qml` are derived from
+[omarchy-herdr](https://github.com/fabean/omarchy-herdr) (MIT, Copyright (c)
+2026 Josh Fabean); the notice is in [LICENSE](LICENSE).

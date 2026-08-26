@@ -112,6 +112,7 @@ Panel {
 
               iconComponent: Component {
                 Text {
+                  textFormat: Text.PlainText
                   text: "󰚩"
                   color: root.colorFor(root.state.blocked > 0 ? "blocked"
                     : root.state.working > 0 ? "working" : "idle")
@@ -150,8 +151,11 @@ Panel {
             visible: !root.online
             width: parent.width
             textFormat: Text.PlainText
-            // The reason comes from our own parse, never from luvus's stdout,
-            // so there is nothing here an agent's output could reach.
+            // The reason often IS luvus's own error.message, passed through —
+            // Model.parseAgents lifts it straight out of the error envelope. It
+            // is clamped and stripped at that boundary rather than here, because
+            // the same string also reaches the hero and the bar tooltip, and
+            // both of those render inside components this plugin does not own.
             text: (root.state.reason || "luvus is not running") + "\n\nStart it with:  luvus"
             color: root.muted
             font.family: Style.font.menuFamily
@@ -225,6 +229,20 @@ Panel {
             }
           }
 
+          // Refusing to draw 100,000 rows is right; doing it silently is not,
+          // because the panel would then disagree with the bar's count and look
+          // simply wrong. state.total stays honest across the slice.
+          Text {
+            visible: root.online && root.state.truncated === true
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Showing the first " + root.agents.length + " of " + Number(root.state.total || 0) + "."
+            color: root.muted
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+            horizontalAlignment: Text.AlignHCenter
+          }
+
           Text {
             visible: root.online && root.agents.length === 0
             width: parent.width
@@ -280,6 +298,7 @@ Panel {
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
         text: cell.value
         color: cell.lit ? cell.tint : root.fg
         font.family: Style.font.menuFamily
@@ -289,6 +308,7 @@ Panel {
 
       Text {
         anchors.horizontalCenter: parent.horizontalCenter
+        textFormat: Text.PlainText
         text: cell.label.toUpperCase()
         color: root.muted
         font.family: Style.font.menuFamily

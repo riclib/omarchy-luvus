@@ -195,6 +195,65 @@ testable without opening the panel and squinting.
 Claude Code's. It reads as the category. A distinctive mark was tried and
 reverted for exactly that reason — do not "fix" it.
 
+## Before a release
+
+The lesson from omarchy-capacities' two review rounds, carried here so it is not
+relearned. Both findings that cost that plugin a round — unbounded buffering and
+AutoText sinks — were present in this one at first commit, and both were caught
+by running these, not by reasoning.
+
+```bash
+node --test tests/model.test.js
+omarchy plugin validate .
+
+# no Text may be left on AutoText — the security review checks this mechanically
+for f in *.qml; do awk '/^\s*Text \{/{s=NR;b="";d=1;next} s&&d>0{b=b"\n"$0; if(/\{/)d++; if(/\}/)d--; if(d==0){if(b !~ /textFormat/) print FILENAME": Text at "s" has no textFormat"; s=0}}' "$f"; done
+
+# nothing private in the tree or the history
+grep -rniE 'token|secret|api[-_]?key|password|bearer' --exclude-dir=.git .
+find . -name '__pycache__' -o -name '*.pyc' | grep -v ./.git && echo "^ remove these"
+```
+
+**The awk check only sees `.qml` in this directory, and that is its blind spot.**
+It cannot see the components this plugin passes strings *into*. Both real
+AutoText findings here were one level up — `PanelHero`'s `detailText` and the bar's
+`tooltipLabel`, in `/usr/share/omarchy/shell/`, neither of which sets
+`textFormat`. So the rule is not "every Text of ours is PlainText"; it is **strip
+and clamp at the boundary in Model.js**, because a sink you do not own cannot be
+fixed and a sink added later will not inherit a fix applied at the sink.
+
+Then bump `version` in `manifest.json`, commit, tag `vX.Y.Z`, push both.
+
+## What is bounded, and where
+
+Every dimension of luvus's answer is luvus's to choose — and `luvusBin` means
+"luvus" is whatever binary the setting names.
+
+| Dimension | Bounded by | Where |
+| --- | --- | --- |
+| seconds | `timeout 10` | `Service.boundedRead` |
+| bytes on the wire | `head -c 4000000` | `Service.boundedRead` |
+| bytes accepted | `text.length > 4000000` | `Service.qml` `onStreamFinished` |
+| one event line | `line.length > 65536` | `Service.qml` `SplitParser.onRead` |
+| agents rendered | `MAX_AGENTS` (total stays honest) | `Model.parseAgents` |
+| any single string | `MAX_TEXT`, plus `<>&` stripped | `Model.clamp` |
+| a pane id | `^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$` | `Model.paneId` |
+
+Two of those need their reasons stated or they will be "simplified" away:
+
+- **`boundedRead` is producer-side on purpose.** `StdioCollector` has no size
+  limit and no deadline; by the time our own length check runs, the shell has
+  already buffered the whole answer. The consumer-side check is a second line,
+  not the line.
+- **`Model.paneId` forbids a leading `-`, and that is the entire point.** A pane
+  id is argv to the luvus binary, and luvus parses `-x` or `--remote=host` where
+  an id is expected as one of its own global flags rather than rejecting it. A
+  character class of `[A-Za-z0-9._-]` admits exactly the input being guarded
+  against; a test covers it because the first version got this wrong.
+
+Anything that reaches a shell goes through `Util.execArgv` or an argv array,
+never `bar.run` — `bar.run` hands its argument to `bash -lc` as a string.
+
 ## Lineage
 
 The panel's shape — the four counts, the worst-first rows, the status glyphs and
