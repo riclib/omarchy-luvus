@@ -19,6 +19,10 @@ nothing else.
 Click for the panel. Middle click to refresh. Right click to jump straight to
 whatever needs you.
 
+<p align="center">
+  <img src="preview.png" alt="The luvus widget in the Omarchy bar, with its panel open: counts for blocked, working, idle and done, then one row per agent" width="420">
+</p>
+
 ## Requires
 
 - [luvus](https://github.com/RizRiyz/luvus) 0.11 or newer, with a server running
