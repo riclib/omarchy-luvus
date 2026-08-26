@@ -50,7 +50,10 @@ function emptyState(reason) {
 function shortPath(path, home) {
   var text = String(path || "")
   if (!text) return ""
-  if (home && text.indexOf(home) === 0) return "~" + text.slice(home.length)
+  // The boundary check is the point: without it /home/riclib-backup/src renders
+  // as ~-backup/src, which reads as a path the user does not have.
+  if (home && text === home) return "~"
+  if (home && text.indexOf(home + "/") === 0) return "~" + text.slice(home.length)
   return text
 }
 
@@ -122,36 +125,52 @@ function parseAgents(raw, home) {
     return emptyState(String(message))
   }
 
-  var list = parsed && parsed.result && Array.isArray(parsed.result.agents)
-    ? parsed.result.agents : []
+  // `null`, `0`, `"hello"` and `[]` all parse, and all used to read as a healthy
+  // server with no agents. An answer that is not an object with a result is not
+  // an answer.
+  if (!parsed || typeof parsed !== "object" || !parsed.result || typeof parsed.result !== "object")
+    return emptyState("unreadable answer from luvus")
+
+  var list = Array.isArray(parsed.result.agents) ? parsed.result.agents : []
 
   var state = emptyState("")
   state.online = true
-  // Counted before the slice, so the panel can say how many there really are
-  // even when it refuses to draw them all.
   state.total = list.length
   state.truncated = list.length > MAX_AGENTS
-  if (state.truncated) list = list.slice(0, MAX_AGENTS)
+
+  // Two passes, and the split matters. The COUNTS are taken over every agent,
+  // because the bar's number and the urgent colour are driven by them: counting
+  // only what survives a cap means 300 idle agents and one blocked one past the
+  // cut reads as `blocked: 0`, which takes the bar off the urgent colour and —
+  // with hideWhenIdle on — hides the widget precisely when someone is waiting.
+  //
+  // Only the ROWS are capped, and only after the sort, so what a cap drops is
+  // always the least urgent. Building a sort key per agent rather than a whole
+  // row keeps the cost of that promise proportional to a list nobody will read.
+  var keys = []
+  for (var i = 0; i < list.length; i++) {
+    var status = normalizeStatus((list[i] || {}).status)
+    state[status] = (state[status] || 0) + 1
+    keys.push({ i: i, order: STATUS_ORDER[status], status: status })
+  }
+
+  keys.sort(function (a, b) {
+    if (a.order !== b.order) return a.order - b.order
+    return agentLabel(list[a.i] || {}).localeCompare(agentLabel(list[b.i] || {}))
+  })
 
   var rows = []
-  for (var i = 0; i < list.length; i++) {
-    var agent = list[i] || {}
-    var status = normalizeStatus(agent.status)
-    state[status] = (state[status] || 0) + 1
+  var shown = Math.min(keys.length, MAX_AGENTS)
+  for (var k = 0; k < shown; k++) {
+    var agent = list[keys[k].i] || {}
     rows.push({
       label: agentLabel(agent),
       detail: agentDetail(agent, home),
-      status: status,
+      status: keys[k].status,
       pane: paneId(agent.pane),
       focused: agent.focused === true
     })
   }
-
-  rows.sort(function (a, b) {
-    var byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
-    if (byStatus !== 0) return byStatus
-    return a.label.localeCompare(b.label)
-  })
 
   state.agents = rows
   return state
@@ -245,10 +264,14 @@ function heroMeta(state) {
 function jumpTarget(state) {
   if (!state || !state.online) return ""
   var agents = state.agents || []
+  // `&& pane` is not belt-and-braces: paneId() blanks an id it will not hand to
+  // luvus, so the first blocked agent may have no jump while the second does.
+  // Returning its empty pane would hide the jump for every reachable agent
+  // behind it.
   for (var i = 0; i < agents.length; i++)
-    if (agents[i].status === "blocked") return agents[i].pane
+    if (agents[i].status === "blocked" && agents[i].pane) return agents[i].pane
   for (var j = 0; j < agents.length; j++)
-    if (agents[j].status === "working") return agents[j].pane
+    if (agents[j].status === "working" && agents[j].pane) return agents[j].pane
   return ""
 }
 

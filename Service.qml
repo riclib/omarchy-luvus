@@ -115,11 +115,26 @@ Item {
   // script is a constant and every variable part arrives as a positional
   // parameter, which bash expands without re-tokenizing, so a path or a session
   // name containing $(…) stays literal.
+  //
+  // pipefail matters as much as the bounds: `head` is last in the pipeline, so
+  // without it the status is always head's 0 and every failure looks like
+  // success. With it, 127 is "not found", 124 is "timed out", anything else
+  // non-zero is luvus itself objecting — three different things to tell the user.
   readonly property string boundedRead:
-    'timeout "$1" "${@:3}" | head -c "$2"'
+    'set -o pipefail; timeout "$1" "${@:3}" | head -c "$2"'
+
+  // A refresh that arrives while one is in flight used to be dropped and never
+  // retried: the answer already on the wire predates the event that asked for
+  // it, so the panel would sit on stale state until the 30s poll. Remember that
+  // one was wanted and run it when the current one lands.
+  property bool _pending: false
 
   function refresh() {
-    if (!root.started || listProcess.running) return
+    if (!root.started) return
+    if (listProcess.running) {
+      root._pending = true
+      return
+    }
     root.refreshing = true
     listProcess.command = ["bash", "-lc", root.boundedRead, "bash", "10", "4000000"]
       .concat(root.argv(["agent", "list"]))
@@ -157,13 +172,18 @@ Item {
 
     onExited: function (exitCode) {
       root.refreshing = false
-      // Nothing on stdout and a non-zero exit is the binary missing or the
-      // server down. parseAgents has already produced an offline state from the
-      // empty stream; name the likelier cause for the panel.
-      if (exitCode !== 0 && !root.state.online)
-        root.state = Model.emptyState(exitCode === 127
-          ? "luvus not found on PATH"
+      // onStreamFinished has already run by the time this does, so state is set;
+      // this only refines the reason, using codes pipefail makes real.
+      if (exitCode !== 0 && !root.state.online) {
+        root.state = Model.emptyState(
+          exitCode === 127 ? "luvus not found — check the luvusBin setting"
+          : exitCode === 124 ? "luvus did not answer in time"
           : "luvus server not running")
+      }
+      if (root._pending) {
+        root._pending = false
+        root.refresh()
+      }
     }
   }
 
@@ -212,6 +232,29 @@ Item {
 
   Timer {
     id: restart
+    onTriggered: root.openStream()
+  }
+
+  // The one thing that notices a subscription that never arrived.
+  //
+  // onExited cannot cover this: a Process that fails to SPAWN — no such binary,
+  // fork refused — reports nothing at all, so the backoff above never arms and
+  // the widget stays poll-only for the life of the shell, its only symptom the
+  // panel's quiet "live updates are not connected" line. A server that accepts
+  // the connection and then never acknowledges looks the same from here.
+  //
+  // Declarative on purpose, after two goes at arming it by hand. `running` as a
+  // binding cannot be cancelled by a stale callback, and both earlier attempts
+  // failed exactly that way: openStream armed the timer for the new process and
+  // the outgoing process's own exit handler disarmed it a moment later. The
+  // condition below IS the question being asked — we want a subscription, and we
+  // have not got one — so it needs no arming and no disarming, and it stops
+  // itself the instant `subscribed` turns true.
+  Timer {
+    id: spawnWatch
+    interval: 8000
+    repeat: true
+    running: root.started && root.pushUpdates && !root.subscribed
     onTriggered: root.openStream()
   }
 

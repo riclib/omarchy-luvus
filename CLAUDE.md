@@ -261,3 +261,29 @@ their colours — is taken from `io.github.fabean.herdr` (MIT, Josh Fabean), whi
 solved the same problem for herdr first. Credited in the README, and worth
 keeping in mind when changing the panel: some of those choices are his, and were
 adopted because they were already right.
+
+## The watchdog is declarative, and that is the whole fix
+
+`spawnWatch` is the only thing that notices a subscription that never arrived.
+It has to exist because `onExited` cannot cover it: a `Process` that fails to
+**spawn** — no such binary, fork refused — reports nothing at all, so the backoff
+never arms and the widget stays poll-only for the life of the shell, its only
+symptom the panel's quiet "live updates are not connected" line.
+
+It was written imperatively twice, and failed the same way twice: `openStream()`
+armed it for the incoming process, and the *outgoing* process's own `onExited`
+disarmed it a moment later. Instrumented, the timer read `running=true
+interval=8000` and never fired, because a stale callback had stopped it.
+
+So it is a binding now — `running: started && pushUpdates && !subscribed` — which
+is the question itself rather than a reminder to ask it, and which no callback
+can cancel. Do not "simplify" it back to `restart()`/`stop()`.
+
+The same shape is why `_closing` exists. **An exit we caused must not undo work
+we did on the way to causing it.** That sentence covers three of this plugin's
+five bugs; if a fourth turns up in the process lifecycle, look there first.
+
+Proved with a shim that connects and never acknowledges: retries at a steady 8s
+(`17:28:54, :29:02, :29:10, :29:18, :29:26`), `agent list` still flowing
+throughout, and on a healthy server the same three PIDs across three samples —
+it stops itself the instant `subscribed` turns true.
