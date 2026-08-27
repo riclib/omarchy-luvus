@@ -295,17 +295,47 @@ Every dimension of luvus's answer is luvus's to choose — and `luvusBin` means
 | seconds | `timeout 10` | `Service.boundedRead` |
 | bytes on the wire | `head -c 4000000` | `Service.boundedRead` |
 | bytes accepted | `text.length > 4000000` | `Service.qml` `onStreamFinished` |
-| one event line | `line.length > 65536` | `Service.qml` `SplitParser.onRead` |
+| one event line, on the wire | `fold -b -w MAX_LINE` | `Service.boundedStream` |
+| one event line, accepted | `raw.length >= MAX_LINE` | `Model.readEventLine` |
 | agents rendered | `MAX_AGENTS` (total stays honest) | `Model.parseAgents` |
 | any single string | `MAX_TEXT`, plus `<>&` stripped | `Model.clamp` |
 | a pane id | `^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$` | `Model.paneId` |
 
-Two of those need their reasons stated or they will be "simplified" away:
+Three of those need their reasons stated or they will be "simplified" away:
 
 - **`boundedRead` is producer-side on purpose.** `StdioCollector` has no size
   limit and no deadline; by the time our own length check runs, the shell has
   already buffered the whole answer. The consumer-side check is a second line,
   not the line.
+- **`boundedStream` is the same lesson, learned again on the stream.** This one
+  was a marketplace review finding, and it was right: `luvus events` used to go
+  straight into `SplitParser`, which has exactly one property — the marker it
+  splits on — so `line.length` could not run until a newline arrived, and a
+  producer that never sent one grew the shell's buffer without limit. Measured
+  under real Quickshell against a "luvus" that acknowledges and then emits an
+  endless unterminated line: **3.1GB of RSS after two seconds, 9GB after nine,
+  still climbing.** With `fold` in front, flat at 365MB.
+
+  Each piece of `exec stdbuf -oL fold -b -w … < <(exec "$@")` is load-bearing,
+  and all three were measured:
+
+  - **`fold`, not `timeout`/`head -c`.** The stream is meant to stay open for
+    the life of the shell, so a deadline or a total-byte ceiling would close a
+    *healthy* subscription on a schedule. What needs bounding is the line, and
+    `fold` is the tool that bounds one without reading it whole first.
+  - **`stdbuf -oL` is not decoration.** fold's stdout is a pipe, so it
+    block-buffers by default and the doorbell simply stops ringing — against a
+    producer emitting one line a second, *nothing* arrived in four seconds
+    without it, and one line a second with it. Drop it and the widget silently
+    degrades to the 30s poll while `spawnWatch` retries every 8s forever.
+  - **`exec` and the process substitution keep this one process to kill.**
+    Written the obvious way, `luvus events | fold`, bash stays the parent and
+    Quickshell terminates only the pid it spawned — measured, luvus and fold
+    both outlive it, and this widget closes the stream on every rebind and
+    every `spawnWatch` retry, so that leaks a pair each time. Written as it is,
+    bash *becomes* fold: the pid Quickshell holds is the pid that dies, and
+    luvus follows on its next event, having no reader left.
+
 - **`Model.paneId` forbids a leading `-`, and that is the entire point.** A pane
   id is argv to the luvus binary, and luvus parses `-x` or `--remote=host` where
   an id is expected as one of its own global flags rather than rejecting it. A

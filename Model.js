@@ -22,6 +22,13 @@ var STATUS_ORDER = { blocked: 0, working: 1, done: 2, idle: 3, unknown: 4 }
 var MAX_TEXT = 160
 var MAX_AGENTS = 200
 
+// The ceiling on one line of `luvus events`, in two places at once: Service.qml
+// hands it to `fold` as the width that chops the stream up, and readEventLine
+// refuses a line that arrives at it. Both halves are needed and neither is
+// enough alone — see Service.boundedStream for why the bound has to be applied
+// before the line reaches us at all.
+var MAX_LINE = 65536
+
 function clamp(value) {
   var text = String(value === null || value === undefined ? "" : value)
   text = text.replace(/[<>&]/g, " ")
@@ -196,7 +203,15 @@ var RELEVANT_EVENTS = {
 // acknowledgement — {"id":"1","result":{"type":"subscription_started"}} — which
 // is how we know the stream is live rather than merely spawned.
 function readEventLine(line) {
-  var text = String(line || "").trim()
+  var raw = String(line || "")
+  // An event line is a small JSON object; the largest observed is a few hundred
+  // bytes. A line at MAX_LINE is not one — `fold` upstream cuts anything longer
+  // into fragments of exactly that size, so a line this long is a piece of
+  // something over-long rather than a whole event, and parsing it only to
+  // discard it is work an unbounded stream would get to choose for us.
+  if (raw.length >= MAX_LINE) return { kind: "none" }
+
+  var text = raw.trim()
   if (!text) return { kind: "none" }
 
   var parsed
@@ -300,6 +315,7 @@ if (typeof module !== "undefined") {
     paneId: paneId,
     MAX_TEXT: MAX_TEXT,
     MAX_AGENTS: MAX_AGENTS,
+    MAX_LINE: MAX_LINE,
     agentLabel: agentLabel,
     agentDetail: agentDetail,
     normalizeStatus: normalizeStatus,

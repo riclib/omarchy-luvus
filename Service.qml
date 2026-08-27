@@ -64,7 +64,8 @@ Item {
       eventProcess.running = false
     }
     if (!root.started || !root.pushUpdates) return
-    eventProcess.command = root.argv(["events"])
+    eventProcess.command = ["bash", "-lc", root.boundedStream, "bash"]
+      .concat(root.argv(["events"]))
     eventProcess.running = true
   }
 
@@ -122,6 +123,38 @@ Item {
   // non-zero is luvus itself objecting — three different things to tell the user.
   readonly property string boundedRead:
     'set -o pipefail; timeout "$1" "${@:3}" | head -c "$2"'
+
+  // The subscription needs the same producer-side bound, for the same reason in
+  // a different shape. SplitParser has exactly one property — the marker it
+  // splits on — so a line reaches Model.readEventLine only once its newline has
+  // arrived, and until then the shell is buffering it. A luvus that never sends
+  // one, because it is broken or misconfigured or is not luvus, grows that
+  // buffer until the desktop dies. The check on the far side cannot prevent
+  // that; by the time it runs, the damage is done.
+  //
+  // `timeout` and `head -c` cannot do this job. This stream is meant to stay
+  // open for the life of the shell, so a deadline or a total-byte ceiling would
+  // close a healthy subscription on a schedule. What needs bounding is the
+  // line, and `fold` bounds one without reading it whole first — it emits every
+  // MAX_LINE bytes and never accumulates more, measured flat at 4.3MB against
+  // an endless unterminated line. Anything over-long arrives as fragments of
+  // exactly MAX_LINE, which readEventLine drops unparsed.
+  //
+  // `stdbuf -oL` is not decoration. fold's stdout is a pipe, so it
+  // block-buffers by default and the doorbell simply stops ringing: measured
+  // against a producer emitting one line a second, *nothing* arrived in four
+  // seconds without it, and one line a second with it.
+  //
+  // `exec` and the process substitution are what keep this one process to kill.
+  // Written the obvious way, `luvus events | fold`, bash stays the parent and
+  // Quickshell terminates only the pid it spawned — measured, luvus and fold
+  // both outlive it, and this widget closes the stream on every rebind and
+  // every spawnWatch retry, so that leaks a pair each time. Written this way
+  // bash *becomes* fold, so the pid Quickshell holds is the pid that dies, and
+  // luvus — writing into a pipe with no reader left — follows on its next
+  // event. Only a wholly silent luvus lingers, and only until it speaks.
+  readonly property string boundedStream:
+    'exec stdbuf -oL fold -b -w ' + Model.MAX_LINE + ' < <(exec "$@")'
 
   // A refresh that arrives while one is in flight used to be dropped and never
   // retried: the answer already on the wire predates the event that asked for
@@ -201,10 +234,9 @@ Item {
 
     stdout: SplitParser {
       onRead: function (line) {
-        // An event line is a small JSON object; the largest observed is a few
-        // hundred bytes. Anything at this size is not one, and parsing it only
-        // to discard it is work an unbounded stream gets to choose for us.
-        if (line.length > 65536) return
+        // Bounded twice over: boundedStream keeps a line from growing past
+        // Model.MAX_LINE before it ever reaches here, and readEventLine refuses
+        // one that arrives at it.
         var read = Model.readEventLine(line)
         if (read.kind === "subscribed") {
           root.subscribed = true

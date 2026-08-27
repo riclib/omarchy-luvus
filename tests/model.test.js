@@ -135,6 +135,21 @@ test('an event we do not care about is ignored, not treated as noise', () => {
   assert.equal(read.event, 'terminal.frame')
 })
 
+test('a line at the ceiling is a fragment of something over-long, not an event', () => {
+  // fold(1) upstream cuts an over-long line into pieces of exactly MAX_LINE, so
+  // a line that arrives at the ceiling is never a whole event — even when the
+  // piece happens to be valid JSON on its own.
+  const padded = '{"event":"pane.created","data":{"pane":"'
+    + 'x'.repeat(Model.MAX_LINE) + '"}}'
+  assert.ok(padded.length >= Model.MAX_LINE)
+  assert.equal(Model.readEventLine(padded).kind, 'none')
+
+  // And the boundary is the ceiling itself, not somewhere past it.
+  assert.equal(Model.readEventLine('x'.repeat(Model.MAX_LINE)).kind, 'none')
+  assert.equal(Model.readEventLine(
+    '{"data":{"pane":"2"},"event":"pane.created"}'.padEnd(Model.MAX_LINE - 1)).kind, 'refresh')
+})
+
 test('a partial or non-JSON line is survivable', () => {
   for (const line of ['', '{"data":', 'luvus: connection lost', null]) {
     assert.equal(Model.readEventLine(line).kind, 'none')

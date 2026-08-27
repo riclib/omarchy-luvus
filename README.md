@@ -33,7 +33,10 @@ whatever needs you.
 - A Nerd Font for the glyphs — Omarchy's default bar font already is one.
 
 No jq, no helper script, no daemon of its own. `luvus agent list` prints JSON
-without being asked, so the plugin parses it directly.
+without being asked, so the plugin parses it directly. The only other programs
+it runs are the coreutils that bound what luvus is allowed to hand back —
+`timeout`, `head`, `fold`, `stdbuf` — which are already on any machine running
+Omarchy.
 
 ## Install
 
@@ -162,6 +165,13 @@ carries a full payload and it is tempting to apply it directly, but `pane.closed
 is emitted more than once for the same pane — so an incrementally-maintained list
 would drift, with nothing to catch it doing so. A relevant event debounces for
 300ms and then re-reads.
+
+Both ways in are bounded before the answer reaches the shell rather than after
+it arrives: the read through `timeout` and `head -c`, the subscription through
+`fold`, which caps how long a single event line can grow. The bar is one widget
+inside a shell that draws the whole desktop, and a line that never ends is
+otherwise buffered in that shell's memory while it waits for a newline that may
+never come.
 
 A 30-second timer sits behind all of it. It is not the update mechanism; it is
 the thing that notices the doorbell has stopped working — a luvus server
