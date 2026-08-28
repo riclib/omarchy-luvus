@@ -300,6 +300,7 @@ Every dimension of luvus's answer is luvus's to choose — and `luvusBin` means
 | agents rendered | `MAX_AGENTS` (total stays honest) | `Model.parseAgents` |
 | any single string | `MAX_TEXT`, plus `<>&` stripped | `Model.clamp` |
 | a pane id | `^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$` | `Model.paneId` |
+| processes alive | `setpriv --pdeathsig KILL`, twice | `Service.boundedStream` |
 
 Three of those need their reasons stated or they will be "simplified" away:
 
@@ -333,8 +334,35 @@ Three of those need their reasons stated or they will be "simplified" away:
     Quickshell terminates only the pid it spawned — measured, luvus and fold
     both outlive it, and this widget closes the stream on every rebind and
     every `spawnWatch` retry, so that leaks a pair each time. Written as it is,
-    bash *becomes* fold: the pid Quickshell holds is the pid that dies, and
-    luvus follows on its next event, having no reader left.
+    bash *becomes* fold: the pid Quickshell holds is the pid that dies.
+  - **Both `setpriv --pdeathsig KILL` are the guarantee, not a nicety.** This
+    was the second marketplace finding, and it was right too. Filter and
+    producer are two processes and Quickshell signals only one of them, so
+    without this the producer dies only when it *notices* — writing into a pipe
+    with no reader and taking EPIPE. A luvus that is silent or hung never
+    writes, never notices, and `spawnWatch` reopens every eight seconds for as
+    long as no acknowledgement comes: one orphan per retry, indefinitely.
+    Measured under Quickshell against a producer that never acknowledges,
+    **11 orphans after nine seconds, 18 after sixty-three, all 18 still running
+    after the shell itself exited.** With both in place, flat at one live tree
+    and nothing left behind.
+
+    `PR_SET_PDEATHSIG` is the kernel doing it: the child is signalled the moment
+    its parent dies, whatever it is blocked on and however the parent went —
+    which is why this holds through SIGKILL and through a shell that crashes.
+    The outer one (on fold, watching Quickshell) closes a leak that predates all
+    of this: **v0.1.0 left a `luvus events` behind every time the shell exited**,
+    because Quickshell does not reap its children on the way out. Verified the
+    outer one does not misfire: the signal follows the parent *thread*, so if Qt
+    forked from a worker that later exited it would kill a healthy stream — one
+    fold pid held for a full minute against a live server, so it does not.
+
+    KILL rather than TERM because the threat model is a luvus that is broken or
+    hostile, and TERM is a signal a hostile one can ignore — which reinstates
+    the leak exactly. Nothing is lost by it: a subscription is a read, with
+    nothing to flush. It does not cover a producer that deliberately forks away
+    from its own children; nothing short of a cgroup would, and that is a lot of
+    machinery for a bar widget.
 
 - **`Model.paneId` forbids a leading `-`, and that is the entire point.** A pane
   id is argv to the luvus binary, and luvus parses `-x` or `--remote=host` where

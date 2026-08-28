@@ -150,11 +150,29 @@ Item {
   // Quickshell terminates only the pid it spawned — measured, luvus and fold
   // both outlive it, and this widget closes the stream on every rebind and
   // every spawnWatch retry, so that leaks a pair each time. Written this way
-  // bash *becomes* fold, so the pid Quickshell holds is the pid that dies, and
-  // luvus — writing into a pipe with no reader left — follows on its next
-  // event. Only a wholly silent luvus lingers, and only until it speaks.
+  // bash *becomes* fold, so the pid Quickshell holds is the pid that dies.
+  //
+  // `setpriv --pdeathsig` is what makes luvus die with it, and it is not
+  // belt-and-braces — it is the whole guarantee. Filter and producer are two
+  // processes and Quickshell only ever signals one of them, so without this the
+  // producer's death depends on it *noticing*: writing into a pipe with no
+  // reader and taking EPIPE. A luvus that is silent or hung never writes, so it
+  // never notices, and spawnWatch reopens the stream every eight seconds for as
+  // long as no acknowledgement arrives — one orphan per retry, forever. That is
+  // not theoretical: measured under Quickshell against a producer that never
+  // acknowledges, 11 orphans after nine seconds and 18 after sixty-three, every
+  // one of them still running after the shell itself exited.
+  //
+  // PR_SET_PDEATHSIG is the kernel doing it instead: it signals the child the
+  // moment its parent dies, whatever the child is waiting on and however the
+  // parent died — so this holds when Quickshell escalates to SIGKILL, and when
+  // the shell crashes outright. KILL rather than TERM because the threat model
+  // here is a luvus that is broken or hostile, and TERM is a signal a hostile
+  // one can simply ignore — which would reinstate the leak exactly. Nothing is
+  // lost by it: a subscription is a read, with nothing to flush.
   readonly property string boundedStream:
-    'exec stdbuf -oL fold -b -w ' + Model.MAX_LINE + ' < <(exec "$@")'
+    'exec setpriv --pdeathsig KILL stdbuf -oL fold -b -w ' + Model.MAX_LINE
+      + ' < <(exec setpriv --pdeathsig KILL "$@")'
 
   // A refresh that arrives while one is in flight used to be dropped and never
   // retried: the answer already on the wire predates the event that asked for

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "riclib.luvus",
   "name": "Luvus",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Ricardo Liberato",
   "license": "MIT",
   "description": "Your luvus coding agents in the Omarchy bar — who is working, who is blocked, and a click to go there.",

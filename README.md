@@ -34,8 +34,9 @@ whatever needs you.
 
 No jq, no helper script, no daemon of its own. `luvus agent list` prints JSON
 without being asked, so the plugin parses it directly. The only other programs
-it runs are the coreutils that bound what luvus is allowed to hand back —
-`timeout`, `head`, `fold`, `stdbuf` — which are already on any machine running
+it runs are the ones that bound what luvus is allowed to hand back and how long
+it may outlive the bar — `timeout`, `head`, `fold` and `stdbuf` from coreutils,
+`setpriv` from util-linux — all of which are already on any machine running
 Omarchy.
 
 ## Install
@@ -172,6 +173,11 @@ it arrives: the read through `timeout` and `head -c`, the subscription through
 inside a shell that draws the whole desktop, and a line that never ends is
 otherwise buffered in that shell's memory while it waits for a newline that may
 never come.
+
+Neither outlives the bar. The subscription runs as a filter with luvus behind
+it, and both carry a parent-death signal, so closing the stream — or quitting
+the shell, or the shell crashing — takes the whole pair with it, including a
+luvus that has gone quiet and would never notice on its own.
 
 A 30-second timer sits behind all of it. It is not the update mechanism; it is
 the thing that notices the doorbell has stopped working — a luvus server
